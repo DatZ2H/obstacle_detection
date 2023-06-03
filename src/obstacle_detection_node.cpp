@@ -16,9 +16,6 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <pcl/filters/statistical_outlier_removal.h>
-#include <visualization_msgs/msg/marker_array.hpp>
-#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
-#include <pcl/common/centroid.h>
 
 class ObstacleDetectionNode : public rclcpp::Node
 {
@@ -48,9 +45,6 @@ public:
     clustered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
         "clustered_point_cloud_topic", 10);
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
-
-    safety_markers_publisher_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("safety_markers", 10);
-
   }
 
 private:
@@ -65,7 +59,7 @@ private:
     pcl::PassThrough<pcl::PointXYZ> pass;
     pass.setInputCloud(cloud);
     pass.setFilterFieldName("z");
-    pass.setFilterLimits(0.0, 5.0);
+    pass.setFilterLimits(0.0, 3.0);
     pass.filter(*cloud_filtered);
 
     // Publish the filtered point cloud
@@ -109,7 +103,7 @@ private:
     seg.setInputCloud(cloud_downsampled);
     seg.setModelType(pcl::SACMODEL_PLANE); // xác định mô hình SACMODEL_PLANE là xác định mặt phẳng
     seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setMaxIterations(250);
+    seg.setMaxIterations(400);
     seg.setDistanceThreshold(0.01); // Adjust the distance threshold as needed
     seg.segment(*inliers, *coefficients);
 
