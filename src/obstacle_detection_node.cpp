@@ -29,10 +29,6 @@ public:
       "output_point_cloud_topic",
       10);
 
-    // Initialize TF2 listener
-    tf_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
-    tf_listener_ = std::make_shared<tf2_ros::TransformListener>(*tf_buffer_);
-
     // Create publishers for the processed point clouds
     filtered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
         "filtered_point_cloud_topic", 10);
@@ -149,8 +145,6 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clustered_publisher_;
 
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;
-  std::shared_ptr<tf2_ros::Buffer> tf_buffer_;
-  std::shared_ptr<tf2_ros::TransformListener> tf_listener_;
 };
 
 int main(int argc, char **argv)
