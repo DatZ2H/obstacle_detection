@@ -1,0 +1,10 @@
+# Ignore build artifacts
+build/
+install/
+
+# Ignore generated files
+generated/
+
+# Ignore IDE-specific files
+.vscode/
+*.sublime-workspace
