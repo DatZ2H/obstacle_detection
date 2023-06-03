@@ -15,6 +15,10 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
+#include <pcl/filters/statistical_outlier_removal.h>
+#include <visualization_msgs/msg/marker_array.hpp>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <pcl/common/centroid.h>
 
 class ObstacleDetectionNode : public rclcpp::Node
 {
@@ -27,21 +31,26 @@ public:
         "/camera/depth/color/points", 10,
         std::bind(&ObstacleDetectionNode::processPointCloud, this, std::placeholders::_1));
 
-     // Initialize publisher
+    // Initialize publisher
     publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-      "output_point_cloud_topic",
-      10);
+        "output_point_cloud_topic",
+        10);
 
     // Create publishers for the processed point clouds
     filtered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
         "filtered_point_cloud_topic", 10);
     downsampled_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
         "downsampled_point_cloud_topic", 10);
+    sor_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
+        "StatisticalOutlierRemoval_point_cloud_topic", 10);
     obstacles_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
         "obstacles_point_cloud_topic", 10);
     clustered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
         "clustered_point_cloud_topic", 10);
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+
+    safety_markers_publisher_ = this->create_publisher<visualization_msgs::msg::MarkerArray>("safety_markers", 10);
+
   }
 
 private:
@@ -56,7 +65,7 @@ private:
     pcl::PassThrough<pcl::PointXYZ> pass;
     pass.setInputCloud(cloud);
     pass.setFilterFieldName("z");
-    pass.setFilterLimits(0.0, 1.0);
+    pass.setFilterLimits(0.0, 5.0);
     pass.filter(*cloud_filtered);
 
     // Publish the filtered point cloud
@@ -69,7 +78,7 @@ private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_downsampled(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::VoxelGrid<pcl::PointXYZ> voxelGrid;
     voxelGrid.setInputCloud(cloud_filtered);
-    voxelGrid.setLeafSize(0.01, 0.01, 0.01);
+    voxelGrid.setLeafSize(0.02, 0.02, 0.02);
     voxelGrid.filter(*cloud_downsampled);
 
     // Publish the downsampled point cloud
@@ -78,6 +87,19 @@ private:
     downsampled_msg.header = msg->header;
     downsampled_publisher_->publish(downsampled_msg);
 
+    // Apply StatisticalOutlierRemoval filter to remove outliers
+    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_sor(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    sor.setInputCloud(cloud_downsampled);
+    sor.setMeanK(50);            // Number of nearest neighbors to compute mean distance
+    sor.setStddevMulThresh(1.0); // Standard deviation multiplier threshold
+    sor.filter(*cloud_sor);
+
+    // Publish filtered point cloud
+    sensor_msgs::msg::PointCloud2 sor_msg;
+    pcl::toROSMsg(*cloud_sor, sor_msg);
+    sor_publisher_->publish(sor_msg);
+
     // Step 3: RANSAC segmentation to separate ground plane from obstacles
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_obstacles(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
@@ -85,10 +107,10 @@ private:
     pcl::SACSegmentation<pcl::PointXYZ> seg;
     seg.setOptimizeCoefficients(true);
     seg.setInputCloud(cloud_downsampled);
-    seg.setModelType(pcl::SACMODEL_PLANE);
+    seg.setModelType(pcl::SACMODEL_PLANE); // xác định mô hình SACMODEL_PLANE là xác định mặt phẳng
     seg.setMethodType(pcl::SAC_RANSAC);
-    seg.setMaxIterations(100);
-    seg.setDistanceThreshold(0.01);// Adjust the distance threshold as needed
+    seg.setMaxIterations(250);
+    seg.setDistanceThreshold(0.01); // Adjust the distance threshold as needed
     seg.segment(*inliers, *coefficients);
 
     // Extract the obstacles by removing the ground plane
@@ -110,8 +132,8 @@ private:
     tree->setInputCloud(cloud_obstacles);
     pcl::EuclideanClusterExtraction<pcl::PointXYZ> ec;
     ec.setClusterTolerance(0.02); // Adjust the cluster tolerance as needed
-    ec.setMinClusterSize(100); // Adjust the minimum cluster size as needed
-    ec.setMaxClusterSize(25000); // Adjust the maximum cluster size as needed
+    ec.setMinClusterSize(50);    // Adjust the minimum cluster size as needed
+    ec.setMaxClusterSize(10000);  // Adjust the maximum cluster size as needed
     ec.setSearchMethod(tree);
     ec.setInputCloud(cloud_obstacles);
     ec.extract(cluster_indices);
@@ -147,8 +169,8 @@ private:
     camera_rotation.setRPY(-1.5708, 0, 0); // Modify the rotation angles according to the camera orientation
     publishTransform("base_link", "camera_link", camera_translation, camera_rotation);
   }
-  void publishTransform(const std::string& frame_id, const std::string& child_frame_id,
-                        const pcl::PointXYZ& translation, const tf2::Quaternion& rotation)
+  void publishTransform(const std::string &frame_id, const std::string &child_frame_id,
+                        const pcl::PointXYZ &translation, const tf2::Quaternion &rotation)
   {
     geometry_msgs::msg::TransformStamped transform_stamped;
     transform_stamped.header.stamp = this->now();
@@ -168,6 +190,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr downsampled_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr sor_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr obstacles_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clustered_publisher_;
 
@@ -177,9 +200,9 @@ private:
 
 int main(int argc, char **argv)
 {
-    rclcpp::init(argc, argv);
-    auto node = std::make_shared<ObstacleDetectionNode>();
-    rclcpp::spin(node);
-    rclcpp::shutdown();
-    return 0;
+  rclcpp::init(argc, argv);
+  auto node = std::make_shared<ObstacleDetectionNode>();
+  rclcpp::spin(node);
+  rclcpp::shutdown();
+  return 0;
 }
