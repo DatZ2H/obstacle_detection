@@ -12,6 +12,9 @@
 #include <tf2_ros/transform_listener.h>
 #include <tf2_ros/buffer.h>
 #include <tf2/transform_datatypes.h>
+#include <tf2/LinearMath/Quaternion.h>
+#include <tf2_ros/transform_broadcaster.h>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 
 class ObstacleDetectionNode : public rclcpp::Node
 {
@@ -38,6 +41,7 @@ public:
         "obstacles_point_cloud_topic", 10);
     clustered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
         "clustered_point_cloud_topic", 10);
+    tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
   }
 
 private:
@@ -136,6 +140,29 @@ private:
     pcl::toROSMsg(*cloud_clustered, clustered_msg);
     clustered_msg.header = msg->header;
     clustered_publisher_->publish(clustered_msg);
+
+    // Publish transform from camera_link to base_link
+    pcl::PointXYZ camera_translation(0.0, 0.0, 0.2); // Modify the camera translation according to the camera position
+    tf2::Quaternion camera_rotation;
+    camera_rotation.setRPY(-1.5708, 0, 0); // Modify the rotation angles according to the camera orientation
+    publishTransform("base_link", "camera_link", camera_translation, camera_rotation);
+  }
+  void publishTransform(const std::string& frame_id, const std::string& child_frame_id,
+                        const pcl::PointXYZ& translation, const tf2::Quaternion& rotation)
+  {
+    geometry_msgs::msg::TransformStamped transform_stamped;
+    transform_stamped.header.stamp = this->now();
+    transform_stamped.header.frame_id = frame_id;
+    transform_stamped.child_frame_id = child_frame_id;
+    transform_stamped.transform.translation.x = translation.x;
+    transform_stamped.transform.translation.y = translation.y;
+    transform_stamped.transform.translation.z = translation.z;
+    transform_stamped.transform.rotation.x = rotation.x();
+    transform_stamped.transform.rotation.y = rotation.y();
+    transform_stamped.transform.rotation.z = rotation.z();
+    transform_stamped.transform.rotation.w = rotation.w();
+
+    tf_broadcaster_->sendTransform(transform_stamped);
   }
 
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_;
@@ -145,6 +172,7 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clustered_publisher_;
 
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;
+  std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 };
 
 int main(int argc, char **argv)
