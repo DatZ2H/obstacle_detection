@@ -39,6 +39,7 @@ find_package(pcl_conversions REQUIRED)
 find_package(pcl_ros REQUIRED)
 find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
+find_package(visualization_msgs REQUIRED)
 
 # Add include directories
 include_directories(
@@ -60,6 +61,7 @@ ament_target_dependencies(obstacle_detection_node
   pcl_ros
   tf2
   tf2_ros
+  visualization_msgs
 )
 
 # Install executable
