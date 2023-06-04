@@ -18,6 +18,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <geometry_msgs/msg/transform_stamped.hpp>
 #include <pcl/filters/statistical_outlier_removal.h>
+#include <std_msgs/msg/string.hpp>
 
 class ObstacleDetectionNode : public rclcpp::Node
 {
@@ -30,23 +31,23 @@ public:
         "/camera/depth/color/points", 10,
         std::bind(&ObstacleDetectionNode::processPointCloud, this, std::placeholders::_1));
 
-    // Initialize publisher
-    publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-        "output_point_cloud_topic",
-        10);
 
     // Create publishers for the processed point clouds
-    filtered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-        "filtered_point_cloud_topic", 10);
-    downsampled_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-        "downsampled_point_cloud_topic", 10);
-    denoised_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-        "StatisticalOutlierRemoval_point_cloud_topic", 10);
-    obstacles_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-        "obstacles_point_cloud_topic", 10);
-    clustered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-        "clustered_point_cloud_topic", 10);
+    filtered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("filtered_publisher", 20);
+    downsampled_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("downsampled_publisher", 20);
+    denoised_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("StatisticalOutlierRemoval_point_cloud_topic", 20);
+    obstacles_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("obstacles_publisher", 20);
+    clustered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("clustered_publisher", 20);
+    warning_objects_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("warning_objects_publisher", 20);
+    protection_objects_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("protection_objects_publisher", 20);
+    safety_status_publisher_ = this->create_publisher<std_msgs::msg::String>("safety_status_publisher", 20);
+
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
+
+    captured_object_cloud_ = std::make_shared<pcl::PointCloud<pcl::PointXYZ>>();
+    warning_zone_limit = 1.0;  // Adjust the warning zone limit as needed
+    protection_zone_limit = 0.5;  // Adjust the protection zone limit as needed
+
 
   }
 
@@ -75,7 +76,7 @@ private:
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_downsampled(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::VoxelGrid<pcl::PointXYZ> voxelGrid;
     voxelGrid.setInputCloud(cloud_filtered);
-    voxelGrid.setLeafSize(0.02, 0.02, 0.02);
+    voxelGrid.setLeafSize(0.01, 0.01, 0.01);
     voxelGrid.filter(*cloud_downsampled);
 
     // Publish the downsampled point cloud
@@ -158,6 +159,58 @@ private:
     clustered_msg.header = msg->header;
     clustered_publisher_->publish(clustered_msg);
 
+
+    // Publish the clustered point clouds and detect objects in safety zones
+    bool warning_zone_detected = false;
+    bool protection_zone_detected = false;
+    pcl::PointCloud<pcl::PointXYZ>::Ptr warning_objects_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+    pcl::PointCloud<pcl::PointXYZ>::Ptr protection_objects_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+// Compute the centroid of the cluster
+      pcl::PointXYZ centroid;
+      pcl::computeCentroid(*cloud_clustered, centroid);
+
+      // Check if the cluster falls within the warning zone
+      if (centroid.x < warning_zone_limit && centroid.y < warning_zone_limit && centroid.z < warning_zone_limit)
+      {
+        warning_zone_detected = true;
+        *warning_objects_cloud += *cloud_clustered;
+      }
+
+      // Check if the cluster falls within the protection zone
+      if (centroid.x < protection_zone_limit && centroid.y < protection_zone_limit && centroid.z < protection_zone_limit)
+      {
+        protection_zone_detected = true;
+        *protection_objects_cloud += *cloud_clustered;
+      }
+
+      /// Publish the warning objects point cloud
+    sensor_msgs::msg::PointCloud2 warning_objects_msg;
+    pcl::toROSMsg(*warning_objects_cloud, warning_objects_msg);
+    warning_objects_msg.header = msg->header;
+    warning_objects_publisher_->publish(warning_objects_msg);
+
+    // Publish the protection objects point cloud
+    sensor_msgs::msg::PointCloud2 protection_objects_msg;
+    pcl::toROSMsg(*protection_objects_cloud, protection_objects_msg);
+    protection_objects_msg.header = msg->header;
+    protection_objects_publisher_->publish(protection_objects_msg);
+
+    // Publish the safety status
+    std_msgs::msg::String safety_status_msg;
+    if (protection_zone_detected)
+    {
+      safety_status_msg.data = "Danger";
+    }
+    else if (warning_zone_detected)
+    {
+      safety_status_msg.data = "Warning";
+    }
+    else
+    {
+      safety_status_msg.data = "Safe";
+    }
+    safety_status_publisher_->publish(safety_status_msg);
+ 
         // Set the initial transformation from camera_link to base_link
     pcl::PointXYZ translation(0.0, 0.0, 0.2);
     tf2::Quaternion rotation;
@@ -165,7 +218,7 @@ private:
     publishTransform("base_link", "camera_link", translation, rotation);
 
     // Perform additional processing to detect motion in warning and protection zones
-      detectMotionInZones(cloud_clustered);
+     // detectMotionInZones(cloud_clustered);
   }
   }
   void detectMotionInZones(const pcl::PointCloud<pcl::PointXYZ>::Ptr& cloud_clustered)
@@ -245,9 +298,16 @@ private:
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr denoised_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr obstacles_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clustered_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr warning_objects_publisher_;
+  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr protection_objects_publisher_;
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr safety_status_publisher_;
 
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr captured_object_cloud_;
+  
+
   std::shared_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  double warning_zone_limit;
+  double protection_zone_limit;
 };
 
 int main(int argc, char **argv)
