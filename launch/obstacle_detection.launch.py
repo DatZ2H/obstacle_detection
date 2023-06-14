@@ -24,6 +24,12 @@ def generate_launch_description():
         name='obstacle_detection_node',
         parameters=[{'input_topic': LaunchConfiguration('input_topic')}]
     )
+       # Launch point_cloud_merger_node
+    point_cloud_merger_node = Node(
+        package='obstacle_detection',
+        executable='point_cloud_merger_node',
+        name='point_cloud_merger_node'
+    )
 
     # Create launch description
     ld = LaunchDescription()
@@ -31,5 +37,6 @@ def generate_launch_description():
     # Add actions to launch description
     ld.add_action(input_topic)
     ld.add_action(obstacle_detection_node)
+    ld.add_action(point_cloud_merger_node)
 
     return ld

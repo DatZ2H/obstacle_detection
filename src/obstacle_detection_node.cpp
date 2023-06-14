@@ -28,19 +28,19 @@ public:
   {
     // Subscribe to the input point cloud topic
     subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-        "/camera/depth/color/points", 10,
+        "/camera/depth/color/points", 30,
         std::bind(&ObstacleDetectionNode::processPointCloud, this, std::placeholders::_1));
 
 
     // Create publishers for the processed point clouds
-    filtered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("filtered_publisher", 20);
-    downsampled_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("downsampled_publisher", 20);
-    denoised_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("StatisticalOutlierRemoval_point_cloud_topic", 20);
-    obstacles_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("obstacles_publisher", 20);
-    clustered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("clustered_publisher", 20);
-    warning_objects_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("warning_objects_publisher", 20);
-    protection_objects_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("protection_objects_publisher", 20);
-    safety_status_publisher_ = this->create_publisher<std_msgs::msg::String>("safety_status_publisher", 20);
+    filtered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("filtered_publisher", 30);
+    downsampled_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("downsampled_publisher", 30);
+    //denoised_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("StatisticalOutlierRemoval_point_cloud_topic", 30);
+    obstacles_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("obstacles_publisher", 30);
+    clustered_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("clustered_publisher", 30);
+    warning_objects_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("warning_objects_publisher", 30);
+    protection_objects_publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("protection_objects_publisher", 30);
+    safety_status_publisher_ = this->create_publisher<std_msgs::msg::String>("safety_status_publisher", 30);
 
     tf_broadcaster_ = std::make_shared<tf2_ros::TransformBroadcaster>(this);
 
@@ -56,15 +56,22 @@ private:
   {
     // Convert ROS PointCloud2 message to PCL point cloud
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::fromROSMsg(*msg, *cloud);
+    pcl::fromROSMsg(*msg, *cloud); 
 
     // Step 1: PassThrough filter to remove irrelevant points
     pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_filtered(new pcl::PointCloud<pcl::PointXYZ>);
     pcl::PassThrough<pcl::PointXYZ> pass;
     pass.setInputCloud(cloud);
+    // filter z
     pass.setFilterFieldName("z");
-    pass.setFilterLimits(0.0, 3.0);
+    pass.setFilterLimits(0.0, 5.0);
     pass.filter(*cloud_filtered);
+    // filter y
+    pass.setInputCloud(cloud_filtered);
+    pass.setFilterFieldName("y");
+    pass.setFilterLimits(-0.5, 2);
+    pass.filter(*cloud_filtered);
+
 
     // Publish the filtered point cloud
     sensor_msgs::msg::PointCloud2 filtered_msg;
@@ -85,18 +92,18 @@ private:
     downsampled_msg.header = msg->header;
     downsampled_publisher_->publish(downsampled_msg);
 
-    // Apply StatisticalOutlierRemoval filter to remove outliers
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_denoised(new pcl::PointCloud<pcl::PointXYZ>);
-    pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
-    sor.setInputCloud(cloud_downsampled);
-    sor.setMeanK(50);            // Number of nearest neighbors to compute mean distance
-    sor.setStddevMulThresh(1.0); // Standard deviation multiplier threshold
-    sor.filter(*cloud_denoised);
+    // // Apply StatisticalOutlierRemoval filter to remove outliers
+    // pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_denoised(new pcl::PointCloud<pcl::PointXYZ>);
+    // pcl::StatisticalOutlierRemoval<pcl::PointXYZ> sor;
+    // sor.setInputCloud(cloud_downsampled);
+    // sor.setMeanK(50);            // Number of nearest neighbors to compute mean distance
+    // sor.setStddevMulThresh(1.0); // Standard deviation multiplier threshold
+    // sor.filter(*cloud_denoised);
 
-    // Publish filtered point cloud
-    sensor_msgs::msg::PointCloud2 denoised_msg;
-    pcl::toROSMsg(*cloud_denoised, denoised_msg);
-    denoised_publisher_->publish(denoised_msg);
+    // // Publish filtered point cloud
+    // sensor_msgs::msg::PointCloud2 denoised_msg;
+    // pcl::toROSMsg(*cloud_denoised, denoised_msg);
+    // denoised_publisher_->publish(denoised_msg);
 
     // Step 3: RANSAC segmentation to separate ground plane from obstacles
     pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
@@ -214,8 +221,10 @@ private:
         // Set the initial transformation from camera_link to base_link
     pcl::PointXYZ translation(0.0, 0.0, 0.2);
     tf2::Quaternion rotation;
-    rotation.setRPY(-1.5708, 0, 0);
-    publishTransform("base_link", "camera_link", translation, rotation);
+    // rotation.setRPY(-1.5708, 0, 0);
+   // rotation.setRPY(0, 0.17453293, 0);
+   rotation.setRPY(-1.5708, 0, 0);
+    publishTransform("base_link", "camera1_link", translation, rotation);
 
     // Perform additional processing to detect motion in warning and protection zones
      // detectMotionInZones(cloud_clustered);
@@ -295,7 +304,7 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::PointCloud2>::SharedPtr subscription_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr filtered_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr downsampled_publisher_;
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr denoised_publisher_;
+  //::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr denoised_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr obstacles_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr clustered_publisher_;
   rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr warning_objects_publisher_;

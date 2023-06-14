@@ -53,7 +53,19 @@ include_directories(
 )
 
 # Add executable
-add_executable(obstacle_detection_node src/obstacle_detection_node.cpp)
+# Create obstacle_detection_node executable
+add_executable(obstacle_detection_node
+  src/obstacle_detection_node.cpp
+)
+target_link_libraries(obstacle_detection_node
+  ${rclcpp_LIBRARIES}
+  ${sensor_msgs_LIBRARIES}
+  ${pcl_conversions_LIBRARIES}
+  ${pcl_filters_LIBRARIES}
+  ${pcl_segmentation_LIBRARIES}
+  ${pcl_features_LIBRARIES}
+  ${pcl_visualization_LIBRARIES}
+)
 ament_target_dependencies(obstacle_detection_node
   rclcpp
   sensor_msgs
@@ -63,9 +75,32 @@ ament_target_dependencies(obstacle_detection_node
   tf2_ros
   visualization_msgs
 )
+# Create point_cloud_merger_node executable
+add_executable(point_cloud_merger_node
+  src/PointCloudMergerNode.cpp
+)
+target_link_libraries(point_cloud_merger_node
+  ${rclcpp_LIBRARIES}
+  ${sensor_msgs_LIBRARIES}
+  ${pcl_conversions_LIBRARIES}
+  ${pcl_filters_LIBRARIES}
+  ${pcl_segmentation_LIBRARIES}
+  ${pcl_features_LIBRARIES}
+  ${pcl_visualization_LIBRARIES}
+)
+ament_target_dependencies(point_cloud_merger_node
+  rclcpp
+  sensor_msgs
+  pcl_conversions
+  pcl_ros
+  tf2
+  tf2_ros
+  visualization_msgs
+
+)
 
 # Install executable
-install(TARGETS obstacle_detection_node
+install(TARGETS obstacle_detection_node point_cloud_merger_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
