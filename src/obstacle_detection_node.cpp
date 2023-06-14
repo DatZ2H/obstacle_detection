@@ -224,7 +224,7 @@ private:
     // rotation.setRPY(-1.5708, 0, 0);
    // rotation.setRPY(0, 0.17453293, 0);
    rotation.setRPY(-1.5708, 0, 0);
-    publishTransform("base_link", "camera1_link", translation, rotation);
+    publishTransform("base_link", "camera_base", translation, rotation);
 
     // Perform additional processing to detect motion in warning and protection zones
      // detectMotionInZones(cloud_clustered);
